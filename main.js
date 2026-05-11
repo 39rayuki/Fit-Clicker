@@ -232,10 +232,13 @@ function renderUI() {
 
 // --- Main Loops ---
 async function predictWebcam() {
-    // キャンバスサイズをビデオの解像度に合わせる（0の場合はスキップ）
+    // キャンバスサイズをビデオの解像度に合わせる
     if (video.videoWidth > 0 && video.videoHeight > 0) {
-        canvasElement.width = video.videoWidth;
-        canvasElement.height = video.videoHeight;
+        if (canvasElement.width !== video.videoWidth) {
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+            console.log("Canvas Resized to:", video.videoWidth, video.videoHeight);
+        }
     } else {
         requestAnimationFrame(predictWebcam);
         return;
@@ -248,16 +251,29 @@ async function predictWebcam() {
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         
+        // --- テスト描画（これが左上に見えるか確認してください） ---
+        canvasCtx.fillStyle = "red";
+        canvasCtx.fillRect(10, 10, 50, 50); 
+        // ---------------------------------------------------
+
         const drawingUtils = new DrawingUtils(canvasCtx);
         if (result.landmarks && result.landmarks.length > 0) {
             for (const landmarks of result.landmarks) {
-                // スケルトンの描画（視認性を最大にするため白に変更）
+                // MediaPipe標準の描画
                 drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: '#FFFFFF', lineWidth: 5 });
                 drawingUtils.drawLandmarks(landmarks, { color: '#fbbf24', radius: 5 });
                 
+                // 手動での予備描画（標準が動かない場合用）
+                canvasCtx.fillStyle = "#fbbf24";
+                landmarks.forEach(point => {
+                    const x = point.x * canvasElement.width;
+                    const y = point.y * canvasElement.height;
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(x, y, 4, 0, Math.PI * 2);
+                    canvasCtx.fill();
+                });
+
                 checkExercises(landmarks);
-                
-                // 運動検知
                 const motion = calculateMotion(result.landmarks);
                 updateMotionState(motion);
             }
