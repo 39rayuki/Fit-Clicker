@@ -91,25 +91,42 @@ function updateCoins(amount = null) {
     earningRateText.textContent = `Rate: ${rate} coins/sec`;
 }
 
+let missionProgress = 0;
+
 function startMission() {
     const randomMission = MISSIONS[Math.floor(Math.random() * MISSIONS.length)];
     currentMission = randomMission;
     missionTitle.textContent = randomMission.title;
     missionReward.textContent = `Reward: ${randomMission.reward.toLocaleString()} coins`;
+    missionProgress = 0;
     
     if (randomMission.type === "emergency") {
         body.classList.add('emergency');
         missionTimeLeft = randomMission.time;
         missionBtn.disabled = true;
-        missionBtn.textContent = "Moving detected...";
+        missionBtn.textContent = "MOVEMENT REQUIRED!";
         
         missionInterval = setInterval(() => {
             missionTimeLeft--;
+            
+            // 運動を検知している間だけ進捗を追加
+            if (isBonusActive) {
+                missionProgress++;
+                missionBtn.textContent = `Progress: ${Math.floor((missionProgress / randomMission.time) * 100)}%`;
+            } else {
+                missionBtn.textContent = "STOPPED! MOVE NOW!";
+            }
+
             missionTimer.textContent = `00:${missionTimeLeft.toString().padStart(2, '0')}`;
             
             if (missionTimeLeft <= 0) {
                 clearInterval(missionInterval);
-                completeMission();
+                // 50%以上の時間動いていればクリア
+                if (missionProgress >= randomMission.time * 0.5) {
+                    completeMission();
+                } else {
+                    failMission();
+                }
             }
         }, 1000);
     } else {
@@ -118,6 +135,14 @@ function startMission() {
         missionBtn.disabled = false;
         missionBtn.textContent = "Complete Mission";
     }
+}
+
+function failMission() {
+    missionTitle.textContent = "MISSION FAILED...";
+    missionTimer.textContent = "FAIL";
+    missionBtn.textContent = "NOT ENOUGH MOTION";
+    body.classList.remove('emergency');
+    setTimeout(startMission, 5000);
 }
 
 function completeMission() {
