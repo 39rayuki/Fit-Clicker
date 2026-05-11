@@ -24,8 +24,8 @@ let state = {
     },
     activeMissions: {
         global: [
-            { id: 'g1', title: "Squat Master I", target: 50, current: 0, reward: 10000, key: 'squat' },
-            { id: 'g2', title: "Daily Swinger I", target: 100, current: 0, reward: 5000, key: 'swing' }
+            { id: 'g1', title: "スクワットマスター I", target: 50, current: 0, reward: 10000, key: 'squat' },
+            { id: 'g2', title: "腕振りの達人 I", target: 100, current: 0, reward: 5000, key: 'swing' }
         ],
         daily: [],
         emergency: null
@@ -60,7 +60,7 @@ async function initAI() {
         runningMode: "VIDEO",
         numPoses: 1
     });
-    cameraStatus.textContent = "AI Ready. Click Start!";
+    cameraStatus.textContent = "AIの準備が完了。開始をクリック！";
 }
 initAI();
 
@@ -110,9 +110,9 @@ function generateDailyMissions() {
     if (state.lastDailyUpdate === now && state.activeMissions.daily.length > 0) return;
 
     state.activeMissions.daily = [
-        { id: 'd1', title: "Morning Squats", target: 20, current: 0, reward: 2000, key: 'squat', expires: now },
-        { id: 'd2', title: "Noon Swings", target: 30, current: 0, reward: 1500, key: 'swing', expires: now },
-        { id: 'd3', title: "Evening Grind", target: 50, current: 0, reward: 3000, key: 'squat', expires: now }
+        { id: 'd1', title: "朝のスクワット", target: 20, current: 0, reward: 2000, key: 'squat', expires: now },
+        { id: 'd2', title: "昼の腕振り", target: 30, current: 0, reward: 1500, key: 'swing', expires: now },
+        { id: 'd3', title: "夜の追い込みスクワット", target: 50, current: 0, reward: 3000, key: 'squat', expires: now }
     ];
     state.lastDailyUpdate = now;
     saveState();
@@ -123,7 +123,7 @@ function triggerEmergencyMission() {
 
     const mission = {
         id: 'e1',
-        title: "EMERGENCY: 20 Squats NOW!",
+        title: "緊急：今すぐスクワット20回！",
         target: 20,
         current: 0,
         reward: 10000,
@@ -134,22 +134,18 @@ function triggerEmergencyMission() {
     
     // Notification
     if (Notification.permission === "granted") {
-        new Notification("Fit Clicker: EMERGENCY MISSION!", { body: mission.title });
+        new Notification("Fit Clicker: 緊急ミッション発生！", { body: mission.title });
     }
     
-    const timer = setInterval(() => {
-        if (!state.activeMissions.emergency) {
-            clearInterval(timer);
-            return;
-        }
-        state.activeMissions.emergency.timeLeft--;
-        if (state.activeMissions.emergency.timeLeft <= 0) {
-            state.activeMissions.emergency = null;
-            clearInterval(timer);
+        if (missionInterval) clearInterval(missionInterval);
+        missionInterval = setInterval(() => {
+            state.activeMissions.emergency.timeLeft--;
+            if (isBonusActive) {
+                // emergencyの進捗はカウント方式に変えたので、ここでは表示だけ更新
+            }
+            // ... (実際には incrementStat で更新されるのでここは表示管理のみ)
             renderUI();
-        }
-        renderUI();
-    }, 1000);
+        }, 1000);
 
     renderUI();
     saveState();
@@ -185,14 +181,14 @@ function updateMissions(key) {
 // --- UI Rendering ---
 function renderUI() {
     coinDisplay.textContent = Math.floor(state.coins).toLocaleString();
-    statsList.textContent = `Squats: ${state.stats.squat} | Swings: ${state.stats.swing}`;
+    statsList.textContent = `スクワット: ${state.stats.squat}回 | 腕振り: ${state.stats.swing}回`;
 
     // Render Daily
     dailyListEl.innerHTML = state.activeMissions.daily.map(m => `
         <div class="mission-item ${m.current >= m.target ? 'completed' : ''}">
             <div class="mission-info">
                 <p class="mission-title">${m.title}</p>
-                <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+                <p class="mission-progress">${m.current}/${m.target}回 (${m.reward}c)</p>
             </div>
             ${m.current >= m.target ? '✅' : ''}
         </div>
@@ -203,7 +199,7 @@ function renderUI() {
         <div class="mission-item ${m.current >= m.target ? 'completed' : ''}">
             <div class="mission-info">
                 <p class="mission-title">${m.title}</p>
-                <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+                <p class="mission-progress">${m.current}/${m.target}回 (${m.reward}c)</p>
             </div>
             ${m.current >= m.target ? '✅' : ''}
         </div>
@@ -218,14 +214,14 @@ function renderUI() {
             <div class="mission-item emergency">
                 <div class="mission-info">
                     <p class="mission-title">${m.title}</p>
-                    <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+                    <p class="mission-progress">${m.current}/${m.target}回 (${m.reward}c)</p>
                 </div>
                 <p class="mission-timer">${min}:${sec.toString().padStart(2, '0')}</p>
             </div>
         `;
         body.classList.add('emergency-active');
     } else {
-        emergencyEl.innerHTML = `<div class="mission-item empty">None</div>`;
+        emergencyEl.innerHTML = `<div class="mission-item empty">現在なし</div>`;
         body.classList.remove('emergency-active');
     }
 }
@@ -297,6 +293,7 @@ startBtn.addEventListener('click', async () => {
     video.srcObject = stream;
     video.addEventListener('loadeddata', predictWebcam);
     startBtn.style.display = 'none';
+    cameraStatus.textContent = "カメラ起動中 - 動いて100倍ボーナス！";
     generateDailyMissions();
     setInterval(gameLoop, 100);
     setInterval(saveState, 5000);
