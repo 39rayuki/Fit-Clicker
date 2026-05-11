@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fit Clicker | 運動で稼げ</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+</head>
+<body id="body">
+    <h1>Fit Clicker</h1>
+    
+    <div class="container">
+        <!-- Stats Card -->
+        <div class="card stats-section">
+            <span class="coin-label">Total Earnings</span>
+            <div class="coin-display" id="coin-count">0</div>
+            <div class="bonus-indicator">100x MOTION BONUS ACTIVE</div>
+            <div class="status-text" id="earning-rate">Rate: 1 coin/sec</div>
+        </div>
+
+        <!-- Camera Card -->
+        <div class="card camera-section">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="motion-meter">
+                <div id="motion-bar"></div>
+            </div>
+            <div class="status-text" id="camera-status">Waiting for camera permission...</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="start-btn">Start Training</button>
+        </div>
+    </div>
+
+    <!-- Hidden canvas for motion analysis -->
+    <canvas id="canvas"></canvas>
+
+    <script src="main.js"></script>
+</body>
+</html>
