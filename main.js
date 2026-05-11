@@ -240,15 +240,19 @@ async function predictWebcam() {
         
         const drawingUtils = new DrawingUtils(canvasCtx);
         if (result.landmarks && result.landmarks.length > 0) {
-            const landmarks = result.landmarks[0];
-            drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
-            drawingUtils.drawLandmarks(landmarks, { radius: 3 });
+            if (lastVideoTime % 10 === 0) console.log("AI Pose Detected!"); // 簡易的なデバッグログ
             
-            checkExercises(landmarks);
-            
-            // Motion detection for bonus
-            const motion = calculateMotion(result.landmarks);
-            updateMotionState(motion);
+            for (const landmarks of result.landmarks) {
+                // スケルトンの描画（より目立つ色に変更）
+                drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: '#38bdf8', lineWidth: 4 });
+                drawingUtils.drawLandmarks(landmarks, { color: '#fbbf24', radius: 4 });
+                
+                checkExercises(landmarks);
+                
+                // 運動検知（感度を少し上げる）
+                const motion = calculateMotion(result.landmarks);
+                updateMotionState(motion);
+            }
         }
         canvasCtx.restore();
     }
