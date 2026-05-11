@@ -8,9 +8,10 @@ Webカメラで運動（動き）を検知すると、獲得コインが **100�
 
 ## 技術スタック
 - HTML5 / Vanilla CSS
-- JavaScript
+- JavaScript (ES Modules)
+- **MediaPipe Pose Landmarker** (AI姿勢推定)
 - MediaDevices API (Camera)
-- Canvas API (Motion Detection)
+- Canvas API (Skeleton Visualization)
 
 ## 使い方
 1. ローカルで `index.html` を開くか、GitHub Pages 等でホストします。

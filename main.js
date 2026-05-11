@@ -1,5 +1,8 @@
+import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
 const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
+const canvasElement = document.getElementById('output_canvas');
+const canvasCtx = canvasElement.getContext('2d');
 const coinDisplay = document.getElementById('coin-count');
 const motionBar = document.getElementById('motion-bar');
 const cameraStatus = document.getElementById('camera-status');
@@ -7,78 +10,115 @@ const earningRateText = document.getElementById('earning-rate');
 const body = document.getElementById('body');
 const startBtn = document.getElementById('start-btn');
 
+// Game State
 let coins = 0;
 let isBonusActive = false;
-let lastFrameData = null;
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+let poseLandmarker = undefined;
+let lastVideoTime = -1;
+let lastLandmarks = null;
 
-// Game loop variables
 const BASE_RATE = 1;
 const BONUS_MULTIPLIER = 100;
-const MOTION_THRESHOLD = 15; // Adjustment based on environment
+const MOTION_THRESHOLD = 0.05; // Pose movement threshold
 
-function updateCoins() {
-    const rate = isBonusActive ? BASE_RATE * BONUS_MULTIPLIER : BASE_RATE;
-    coins += rate;
-    coinDisplay.textContent = Math.floor(coins).toLocaleString();
-    earningRateText.textContent = `Rate: ${rate} coins/sec`;
-}
-
-// Motion detection logic
-function detectMotion() {
-    if (video.paused || video.ended) return;
-
-    // Draw current video frame to hidden canvas
-    canvas.width = 64; // Low res for performance
-    canvas.height = 48;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const currentFrameData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-
-    if (lastFrameData) {
-        let diff = 0;
-        for (let i = 0; i < currentFrameData.length; i += 4) {
-            // Compare brightness (simple version)
-            const oldGray = (lastFrameData[i] + lastFrameData[i+1] + lastFrameData[i+2]) / 3;
-            const newGray = (currentFrameData[i] + currentFrameData[i+1] + currentFrameData[i+2]) / 3;
-            diff += Math.abs(newGray - oldGray);
-        }
-        
-        const motionLevel = (diff / (canvas.width * canvas.height));
-        const normalizedMotion = Math.min(motionLevel / 2, 100);
-        
-        motionBar.style.width = `${normalizedMotion}%`;
-        
-        if (motionLevel > MOTION_THRESHOLD) {
-            isBonusActive = true;
-            body.classList.add('bonus-active');
-        } else {
-            isBonusActive = false;
-            body.classList.remove('bonus-active');
-        }
-    }
-
-    lastFrameData = currentFrameData;
-    requestAnimationFrame(detectMotion);
-}
-
-// Mission variables
+// Mission Logic
 const missionTitle = document.getElementById('mission-title');
 const missionTimer = document.getElementById('mission-timer');
 const missionReward = document.getElementById('mission-reward');
 const missionBtn = document.getElementById('mission-btn');
-const missionCard = document.getElementById('mission-card');
-
 let currentMission = null;
 let missionTimeLeft = 0;
 let missionInterval = null;
+let missionProgress = 0;
 
 const MISSIONS = [
-    { title: "Daily: Squat 10 times", reward: 5000, type: "daily" },
-    { title: "EMERGENCY: Sprint for 30s", reward: 25000, type: "emergency", time: 30 },
-    { title: "Daily: Arm Swings 20 times", reward: 3000, type: "daily" }
+    { title: "AI Daily: Full Body Motion", reward: 5000, type: "daily" },
+    { title: "EMERGENCY: Rapid Movement", reward: 25000, type: "emergency", time: 30 },
+    { title: "AI Daily: Shoulder Rotation", reward: 3000, type: "daily" }
 ];
 
+// 1. Initialize MediaPipe Pose
+async function createPoseLandmarker() {
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+    );
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+            delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1
+    });
+    cameraStatus.textContent = "AI Ready. Click Start!";
+}
+
+createPoseLandmarker();
+
+// 2. Motion Detection via Landmarks
+function calculateMotion(landmarks) {
+    if (!lastLandmarks || !landmarks[0]) {
+        lastLandmarks = landmarks[0];
+        return 0;
+    }
+
+    let totalDiff = 0;
+    const current = landmarks[0];
+    const previous = lastLandmarks;
+
+    // Compare key joints: shoulders, elbows, wrists, hips, knees
+    const jointsToTrack = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26];
+    jointsToTrack.forEach(idx => {
+        const dx = current[idx].x - previous[idx].x;
+        const dy = current[idx].y - previous[idx].y;
+        totalDiff += Math.sqrt(dx * dx + dy * dy);
+    });
+
+    lastLandmarks = current;
+    return totalDiff / jointsToTrack.length;
+}
+
+// 3. Drawing & Main Loop
+async function predictWebcam() {
+    canvasElement.width = video.videoWidth;
+    canvasElement.height = video.videoHeight;
+
+    if (lastVideoTime !== video.currentTime) {
+        lastVideoTime = video.currentTime;
+        const result = poseLandmarker.detectForVideo(video, performance.now());
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        const drawingUtils = new DrawingUtils(canvasCtx);
+        if (result.landmarks) {
+            for (const landmarks of result.landmarks) {
+                drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
+                drawingUtils.drawLandmarks(landmarks, { radius: 4 });
+                
+                const motion = calculateMotion(result.landmarks);
+                updateMotionState(motion);
+            }
+        }
+        canvasCtx.restore();
+    }
+    requestAnimationFrame(predictWebcam);
+}
+
+function updateMotionState(motion) {
+    const normalizedMotion = Math.min(motion * 500, 100); // Scale for UI
+    motionBar.style.width = `${normalizedMotion}%`;
+
+    if (motion > MOTION_THRESHOLD) {
+        isBonusActive = true;
+        body.classList.add('bonus-active');
+    } else {
+        isBonusActive = false;
+        body.classList.remove('bonus-active');
+    }
+}
+
+// Game Functions
 function updateCoins(amount = null) {
     if (amount !== null) {
         coins += amount;
@@ -91,8 +131,6 @@ function updateCoins(amount = null) {
     earningRateText.textContent = `Rate: ${rate} coins/sec`;
 }
 
-let missionProgress = 0;
-
 function startMission() {
     const randomMission = MISSIONS[Math.floor(Math.random() * MISSIONS.length)];
     currentMission = randomMission;
@@ -104,29 +142,21 @@ function startMission() {
         body.classList.add('emergency');
         missionTimeLeft = randomMission.time;
         missionBtn.disabled = true;
-        missionBtn.textContent = "MOVEMENT REQUIRED!";
         
+        if (missionInterval) clearInterval(missionInterval);
         missionInterval = setInterval(() => {
             missionTimeLeft--;
-            
-            // 運動を検知している間だけ進捗を追加
             if (isBonusActive) {
                 missionProgress++;
-                missionBtn.textContent = `Progress: ${Math.floor((missionProgress / randomMission.time) * 100)}%`;
+                missionBtn.textContent = `AI Analyzing: ${Math.floor((missionProgress / randomMission.time) * 100)}%`;
             } else {
-                missionBtn.textContent = "STOPPED! MOVE NOW!";
+                missionBtn.textContent = "AI WAITING FOR MOTION...";
             }
-
             missionTimer.textContent = `00:${missionTimeLeft.toString().padStart(2, '0')}`;
-            
             if (missionTimeLeft <= 0) {
                 clearInterval(missionInterval);
-                // 50%以上の時間動いていればクリア
-                if (missionProgress >= randomMission.time * 0.5) {
-                    completeMission();
-                } else {
-                    failMission();
-                }
+                if (missionProgress >= randomMission.time * 0.4) completeMission();
+                else failMission();
             }
         }, 1000);
     } else {
@@ -137,46 +167,29 @@ function startMission() {
     }
 }
 
-function failMission() {
-    missionTitle.textContent = "MISSION FAILED...";
-    missionTimer.textContent = "FAIL";
-    missionBtn.textContent = "NOT ENOUGH MOTION";
+function completeMission() {
+    updateCoins(currentMission.reward);
+    missionTitle.textContent = "MISSION COMPLETE!";
+    missionTimer.textContent = "DONE";
     body.classList.remove('emergency');
     setTimeout(startMission, 5000);
 }
 
-function completeMission() {
-    if (!currentMission) return;
-    
-    // In a real app, MediaPipe would check the movement here.
-    // For prototype, we just give reward if bonus was active at any point or just on click.
-    updateCoins(currentMission.reward);
-    
-    missionTitle.textContent = "MISSION COMPLETE!";
-    missionTimer.textContent = "DONE";
+function failMission() {
+    missionTitle.textContent = "MISSION FAILED...";
+    missionTimer.textContent = "FAIL";
+    missionBtn.textContent = "LOW ACTIVITY";
     body.classList.remove('emergency');
-    
-    setTimeout(startMission, 5000); // Next mission after 5s
+    setTimeout(startMission, 5000);
 }
 
 missionBtn.addEventListener('click', completeMission);
 
-// Initialization
-async function initCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        cameraStatus.textContent = "Camera Active - Move to Earn 100x!";
-        detectMotion();
-        startMission(); // Start first mission
-    } catch (err) {
-        console.error("Camera error:", err);
-        cameraStatus.textContent = "Error: Camera access denied.";
-    }
-}
-
-startBtn.addEventListener('click', () => {
-    initCamera();
+startBtn.addEventListener('click', async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    video.addEventListener('loadeddata', predictWebcam);
     startBtn.style.display = 'none';
     setInterval(updateCoins, 1000);
+    startMission();
 });
