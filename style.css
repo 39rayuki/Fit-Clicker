@@ -172,6 +172,53 @@ button:active {
     transform: translateY(0);
 }
 
+/* Mission Section */
+.mission-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    grid-column: 1 / -1;
+    border: 2px solid transparent;
+    transition: all 0.5s;
+}
+
+.emergency .mission-section {
+    border-color: var(--accent-color);
+    background: rgba(244, 114, 182, 0.1);
+    animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+    0% { box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.4); }
+    70% { box-shadow: 0 0 0 20px rgba(244, 114, 182, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(244, 114, 182, 0); }
+}
+
+.mission-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 1rem 0 0.5rem;
+}
+
+.mission-timer {
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: var(--accent-color);
+    font-family: monospace;
+    margin-bottom: 1rem;
+}
+
+.mission-btn {
+    margin-top: 1rem;
+    width: 100%;
+    max-width: 300px;
+}
+
+.emergency .mission-timer {
+    color: var(--accent-color);
+}
+
 canvas {
     display: none;
 }

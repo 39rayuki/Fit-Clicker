@@ -62,6 +62,80 @@ function detectMotion() {
     requestAnimationFrame(detectMotion);
 }
 
+// Mission variables
+const missionTitle = document.getElementById('mission-title');
+const missionTimer = document.getElementById('mission-timer');
+const missionReward = document.getElementById('mission-reward');
+const missionBtn = document.getElementById('mission-btn');
+const missionCard = document.getElementById('mission-card');
+
+let currentMission = null;
+let missionTimeLeft = 0;
+let missionInterval = null;
+
+const MISSIONS = [
+    { title: "Daily: Squat 10 times", reward: 5000, type: "daily" },
+    { title: "EMERGENCY: Sprint for 30s", reward: 25000, type: "emergency", time: 30 },
+    { title: "Daily: Arm Swings 20 times", reward: 3000, type: "daily" }
+];
+
+function updateCoins(amount = null) {
+    if (amount !== null) {
+        coins += amount;
+    } else {
+        const rate = isBonusActive ? BASE_RATE * BONUS_MULTIPLIER : BASE_RATE;
+        coins += rate;
+    }
+    coinDisplay.textContent = Math.floor(coins).toLocaleString();
+    const rate = isBonusActive ? BASE_RATE * BONUS_MULTIPLIER : BASE_RATE;
+    earningRateText.textContent = `Rate: ${rate} coins/sec`;
+}
+
+function startMission() {
+    const randomMission = MISSIONS[Math.floor(Math.random() * MISSIONS.length)];
+    currentMission = randomMission;
+    missionTitle.textContent = randomMission.title;
+    missionReward.textContent = `Reward: ${randomMission.reward.toLocaleString()} coins`;
+    
+    if (randomMission.type === "emergency") {
+        body.classList.add('emergency');
+        missionTimeLeft = randomMission.time;
+        missionBtn.disabled = true;
+        missionBtn.textContent = "Moving detected...";
+        
+        missionInterval = setInterval(() => {
+            missionTimeLeft--;
+            missionTimer.textContent = `00:${missionTimeLeft.toString().padStart(2, '0')}`;
+            
+            if (missionTimeLeft <= 0) {
+                clearInterval(missionInterval);
+                completeMission();
+            }
+        }, 1000);
+    } else {
+        body.classList.remove('emergency');
+        missionTimer.textContent = "--:--";
+        missionBtn.disabled = false;
+        missionBtn.textContent = "Complete Mission";
+    }
+}
+
+function completeMission() {
+    if (!currentMission) return;
+    
+    // In a real app, MediaPipe would check the movement here.
+    // For prototype, we just give reward if bonus was active at any point or just on click.
+    updateCoins(currentMission.reward);
+    
+    missionTitle.textContent = "MISSION COMPLETE!";
+    missionTimer.textContent = "DONE";
+    body.classList.remove('emergency');
+    
+    setTimeout(startMission, 5000); // Next mission after 5s
+}
+
+missionBtn.addEventListener('click', completeMission);
+
 // Initialization
 async function initCamera() {
     try {
@@ -69,6 +143,7 @@ async function initCamera() {
         video.srcObject = stream;
         cameraStatus.textContent = "Camera Active - Move to Earn 100x!";
         detectMotion();
+        startMission(); // Start first mission
     } catch (err) {
         console.error("Camera error:", err);
         cameraStatus.textContent = "Error: Camera access denied.";
