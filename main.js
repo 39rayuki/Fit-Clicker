@@ -133,19 +133,23 @@ function triggerEmergencyMission() {
     state.activeMissions.emergency = mission;
     
     // Notification
-    if (Notification.permission === "granted") {
+    if (window.Notification && Notification.permission === "granted") {
         new Notification("Fit Clicker: 緊急ミッション発生！", { body: mission.title });
     }
     
-        if (missionInterval) clearInterval(missionInterval);
-        missionInterval = setInterval(() => {
-            state.activeMissions.emergency.timeLeft--;
-            if (isBonusActive) {
-                // emergencyの進捗はカウント方式に変えたので、ここでは表示だけ更新
-            }
-            // ... (実際には incrementStat で更新されるのでここは表示管理のみ)
-            renderUI();
-        }, 1000);
+    if (missionInterval) clearInterval(missionInterval);
+    missionInterval = setInterval(() => {
+        if (!state.activeMissions.emergency) {
+            clearInterval(missionInterval);
+            return;
+        }
+        state.activeMissions.emergency.timeLeft--;
+        if (state.activeMissions.emergency.timeLeft <= 0) {
+            state.activeMissions.emergency = null;
+            clearInterval(missionInterval);
+        }
+        renderUI();
+    }, 1000);
 
     renderUI();
     saveState();
@@ -228,8 +232,14 @@ function renderUI() {
 
 // --- Main Loops ---
 async function predictWebcam() {
-    canvasElement.width = video.videoWidth;
-    canvasElement.height = video.videoHeight;
+    // キャンバスサイズをビデオの解像度に合わせる（0の場合はスキップ）
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+        canvasElement.width = video.videoWidth;
+        canvasElement.height = video.videoHeight;
+    } else {
+        requestAnimationFrame(predictWebcam);
+        return;
+    }
 
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
@@ -240,16 +250,14 @@ async function predictWebcam() {
         
         const drawingUtils = new DrawingUtils(canvasCtx);
         if (result.landmarks && result.landmarks.length > 0) {
-            if (lastVideoTime % 10 === 0) console.log("AI Pose Detected!"); // 簡易的なデバッグログ
-            
             for (const landmarks of result.landmarks) {
-                // スケルトンの描画（より目立つ色に変更）
-                drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: '#38bdf8', lineWidth: 4 });
-                drawingUtils.drawLandmarks(landmarks, { color: '#fbbf24', radius: 4 });
+                // スケルトンの描画（視認性を最大にするため白に変更）
+                drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: '#FFFFFF', lineWidth: 5 });
+                drawingUtils.drawLandmarks(landmarks, { color: '#fbbf24', radius: 5 });
                 
                 checkExercises(landmarks);
                 
-                // 運動検知（感度を少し上げる）
+                // 運動検知
                 const motion = calculateMotion(result.landmarks);
                 updateMotionState(motion);
             }
@@ -298,7 +306,7 @@ startBtn.addEventListener('click', async () => {
     startBtn.textContent = "起動中...";
 
     try {
-        if (Notification.permission !== "granted") {
+        if (window.Notification && Notification.permission !== "granted") {
             await Notification.requestPermission();
         }
 
