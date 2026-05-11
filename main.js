@@ -288,14 +288,44 @@ function gameLoop() {
 
 // --- Init ---
 startBtn.addEventListener('click', async () => {
-    if (Notification.permission !== "granted") Notification.requestPermission();
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    video.addEventListener('loadeddata', predictWebcam);
-    startBtn.style.display = 'none';
-    cameraStatus.textContent = "カメラ起動中 - 動いて100倍ボーナス！";
-    generateDailyMissions();
-    setInterval(gameLoop, 100);
-    setInterval(saveState, 5000);
+    // 連打防止
+    if (startBtn.disabled) return;
+    startBtn.disabled = true;
+    startBtn.textContent = "起動中...";
+
+    try {
+        if (Notification.permission !== "granted") {
+            await Notification.requestPermission();
+        }
+
+        cameraStatus.textContent = "カメラをリクエスト中...";
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            } 
+        });
+
+        video.srcObject = stream;
+        video.addEventListener('loadeddata', predictWebcam);
+        
+        startBtn.style.display = 'none';
+        cameraStatus.textContent = "カメラ起動中 - 動いて100倍ボーナス！";
+        
+        generateDailyMissions();
+        setInterval(gameLoop, 100);
+        setInterval(saveState, 5000);
+
+    } catch (err) {
+        console.error("Camera Error:", err);
+        startBtn.disabled = false;
+        startBtn.textContent = "再試行";
+        
+        if (err.name === 'NotReadableError') {
+            cameraStatus.innerHTML = "<span style='color: #f472b6;'>エラー: カメラが他のアプリで使用中です。<br>他のタブやZoom等を閉じてから再試行してください。</span>";
+        } else {
+            cameraStatus.textContent = "エラー: " + err.message;
+        }
+    }
 });
 renderUI();
