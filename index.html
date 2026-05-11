@@ -19,6 +19,9 @@
             <div class="coin-display" id="coin-count">0</div>
             <div class="bonus-indicator">100x MOTION BONUS ACTIVE</div>
             <div class="status-text" id="earning-rate">Rate: 1 coin/sec</div>
+            <div id="stats-list" class="status-text" style="margin-top: 1rem; text-align: left; width: 100%;">
+                Squats: 0 | Swings: 0
+            </div>
         </div>
 
         <!-- Camera Card -->
@@ -35,11 +38,24 @@
 
         <!-- Mission Card -->
         <div class="card mission-section" id="mission-card">
-            <span class="coin-label">Active Mission</span>
-            <div id="mission-title" class="mission-title">Initializing...</div>
-            <div id="mission-timer" class="mission-timer">--:--</div>
-            <div class="status-text" id="mission-reward">Reward: ???</div>
-            <button id="mission-btn" class="mission-btn">Complete Mission</button>
+            <div class="mission-category">
+                <span class="coin-label">🚨 Emergency Mission</span>
+                <div id="emergency-mission" class="mission-item empty">None</div>
+            </div>
+            <hr style="width: 100%; opacity: 0.1; margin: 1rem 0;">
+            <div class="mission-category">
+                <span class="coin-label">📅 Daily Missions</span>
+                <div id="daily-missions" class="mission-list">
+                    <!-- Daily missions will be injected here -->
+                </div>
+            </div>
+            <hr style="width: 100%; opacity: 0.1; margin: 1rem 0;">
+            <div class="mission-category">
+                <span class="coin-label">🏆 Global Goals</span>
+                <div id="global-missions" class="mission-list">
+                    <!-- Global missions will be injected here -->
+                </div>
+            </div>
         </div>
 
         <!-- Controls -->

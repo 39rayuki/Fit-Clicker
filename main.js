@@ -1,47 +1,57 @@
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
+// DOM Elements
 const video = document.getElementById('video');
 const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const coinDisplay = document.getElementById('coin-count');
 const motionBar = document.getElementById('motion-bar');
 const cameraStatus = document.getElementById('camera-status');
-const earningRateText = document.getElementById('earning-rate');
 const body = document.getElementById('body');
 const startBtn = document.getElementById('start-btn');
+const statsList = document.getElementById('stats-list');
+const emergencyEl = document.getElementById('emergency-mission');
+const dailyListEl = document.getElementById('daily-missions');
+const globalListEl = document.getElementById('global-missions');
 
-// Game State
-let coins = 0;
-let isBonusActive = false;
+// --- Game State & Stats ---
+let state = {
+    coins: 0,
+    stats: {
+        squat: 0,
+        swing: 0,
+        motionSeconds: 0
+    },
+    activeMissions: {
+        global: [
+            { id: 'g1', title: "Squat Master I", target: 50, current: 0, reward: 10000, key: 'squat' },
+            { id: 'g2', title: "Daily Swinger I", target: 100, current: 0, reward: 5000, key: 'swing' }
+        ],
+        daily: [],
+        emergency: null
+    },
+    lastDailyUpdate: null
+};
+
+// Load state from LocalStorage
+const savedState = localStorage.getItem('fitClickerState');
+if (savedState) {
+    const parsed = JSON.parse(savedState);
+    state = { ...state, ...parsed };
+}
+
+function saveState() {
+    localStorage.setItem('fitClickerState', JSON.stringify(state));
+}
+
+// --- Pose AI Setup ---
 let poseLandmarker = undefined;
 let lastVideoTime = -1;
+let isBonusActive = false;
 let lastLandmarks = null;
 
-const BASE_RATE = 1;
-const BONUS_MULTIPLIER = 100;
-const MOTION_THRESHOLD = 0.05; // Pose movement threshold
-
-// Mission Logic
-const missionTitle = document.getElementById('mission-title');
-const missionTimer = document.getElementById('mission-timer');
-const missionReward = document.getElementById('mission-reward');
-const missionBtn = document.getElementById('mission-btn');
-let currentMission = null;
-let missionTimeLeft = 0;
-let missionInterval = null;
-let missionProgress = 0;
-
-const MISSIONS = [
-    { title: "AI Daily: Full Body Motion", reward: 5000, type: "daily" },
-    { title: "EMERGENCY: Rapid Movement", reward: 25000, type: "emergency", time: 30 },
-    { title: "AI Daily: Shoulder Rotation", reward: 3000, type: "daily" }
-];
-
-// 1. Initialize MediaPipe Pose
-async function createPoseLandmarker() {
-    const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-    );
+async function initAI() {
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
     poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
@@ -52,33 +62,175 @@ async function createPoseLandmarker() {
     });
     cameraStatus.textContent = "AI Ready. Click Start!";
 }
+initAI();
 
-createPoseLandmarker();
+// --- Exercise Detection ---
+let squatState = 'up';
+let swingState = 'down';
 
-// 2. Motion Detection via Landmarks
-function calculateMotion(landmarks) {
-    if (!lastLandmarks || !landmarks[0]) {
-        lastLandmarks = landmarks[0];
-        return 0;
+function checkExercises(landmarks) {
+    if (!landmarks) return;
+    const lm = landmarks;
+
+    // 1. Squat detection (Hip vs Knee Y)
+    // Landmarks: Left Hip (23), Left Knee (25)
+    const hipY = lm[23].y;
+    const kneeY = lm[25].y;
+    const squatThreshold = 0.1;
+    
+    if (squatState === 'up' && hipY > kneeY - squatThreshold) {
+        squatState = 'down';
+    } else if (squatState === 'down' && hipY < kneeY - squatThreshold - 0.05) {
+        squatState = 'up';
+        incrementStat('squat');
     }
 
-    let totalDiff = 0;
-    const current = landmarks[0];
-    const previous = lastLandmarks;
-
-    // Compare key joints: shoulders, elbows, wrists, hips, knees
-    const jointsToTrack = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26];
-    jointsToTrack.forEach(idx => {
-        const dx = current[idx].x - previous[idx].x;
-        const dy = current[idx].y - previous[idx].y;
-        totalDiff += Math.sqrt(dx * dx + dy * dy);
-    });
-
-    lastLandmarks = current;
-    return totalDiff / jointsToTrack.length;
+    // 2. Arm Swing detection (Wrist vs Shoulder Y)
+    // Landmarks: Left Shoulder (11), Left Wrist (15)
+    const shoulderY = lm[11].y;
+    const wristY = lm[15].y;
+    if (swingState === 'down' && wristY < shoulderY) {
+        swingState = 'up';
+    } else if (swingState === 'up' && wristY > shoulderY + 0.1) {
+        swingState = 'down';
+        incrementStat('swing');
+    }
 }
 
-// 3. Drawing & Main Loop
+function incrementStat(key) {
+    state.stats[key]++;
+    updateMissions(key);
+    renderUI();
+    saveState();
+}
+
+// --- Mission Logic ---
+function generateDailyMissions() {
+    const now = new Date().toDateString();
+    if (state.lastDailyUpdate === now && state.activeMissions.daily.length > 0) return;
+
+    state.activeMissions.daily = [
+        { id: 'd1', title: "Morning Squats", target: 20, current: 0, reward: 2000, key: 'squat', expires: now },
+        { id: 'd2', title: "Noon Swings", target: 30, current: 0, reward: 1500, key: 'swing', expires: now },
+        { id: 'd3', title: "Evening Grind", target: 50, current: 0, reward: 3000, key: 'squat', expires: now }
+    ];
+    state.lastDailyUpdate = now;
+    saveState();
+}
+
+function triggerEmergencyMission() {
+    if (state.activeMissions.emergency) return;
+
+    const mission = {
+        id: 'e1',
+        title: "EMERGENCY: 20 Squats NOW!",
+        target: 20,
+        current: 0,
+        reward: 10000,
+        key: 'squat',
+        timeLeft: 1800 // 30 minutes
+    };
+    state.activeMissions.emergency = mission;
+    
+    // Notification
+    if (Notification.permission === "granted") {
+        new Notification("Fit Clicker: EMERGENCY MISSION!", { body: mission.title });
+    }
+    
+    const timer = setInterval(() => {
+        if (!state.activeMissions.emergency) {
+            clearInterval(timer);
+            return;
+        }
+        state.activeMissions.emergency.timeLeft--;
+        if (state.activeMissions.emergency.timeLeft <= 0) {
+            state.activeMissions.emergency = null;
+            clearInterval(timer);
+            renderUI();
+        }
+        renderUI();
+    }, 1000);
+
+    renderUI();
+    saveState();
+}
+
+function updateMissions(key) {
+    // Update Global
+    state.activeMissions.global.forEach(m => {
+        if (m.key === key && m.current < m.target) {
+            m.current++;
+            if (m.current >= m.target) state.coins += m.reward;
+        }
+    });
+
+    // Update Daily
+    state.activeMissions.daily.forEach(m => {
+        if (m.key === key && m.current < m.target) {
+            m.current++;
+            if (m.current >= m.target) state.coins += m.reward;
+        }
+    });
+
+    // Update Emergency
+    if (state.activeMissions.emergency && state.activeMissions.emergency.key === key) {
+        state.activeMissions.emergency.current++;
+        if (state.activeMissions.emergency.current >= state.activeMissions.emergency.target) {
+            state.coins += state.activeMissions.emergency.reward;
+            state.activeMissions.emergency = null;
+        }
+    }
+}
+
+// --- UI Rendering ---
+function renderUI() {
+    coinDisplay.textContent = Math.floor(state.coins).toLocaleString();
+    statsList.textContent = `Squats: ${state.stats.squat} | Swings: ${state.stats.swing}`;
+
+    // Render Daily
+    dailyListEl.innerHTML = state.activeMissions.daily.map(m => `
+        <div class="mission-item ${m.current >= m.target ? 'completed' : ''}">
+            <div class="mission-info">
+                <p class="mission-title">${m.title}</p>
+                <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+            </div>
+            ${m.current >= m.target ? '✅' : ''}
+        </div>
+    `).join('');
+
+    // Render Global
+    globalListEl.innerHTML = state.activeMissions.global.map(m => `
+        <div class="mission-item ${m.current >= m.target ? 'completed' : ''}">
+            <div class="mission-info">
+                <p class="mission-title">${m.title}</p>
+                <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+            </div>
+            ${m.current >= m.target ? '✅' : ''}
+        </div>
+    `).join('');
+
+    // Render Emergency
+    if (state.activeMissions.emergency) {
+        const m = state.activeMissions.emergency;
+        const min = Math.floor(m.timeLeft / 60);
+        const sec = m.timeLeft % 60;
+        emergencyEl.innerHTML = `
+            <div class="mission-item emergency">
+                <div class="mission-info">
+                    <p class="mission-title">${m.title}</p>
+                    <p class="mission-progress">${m.current}/${m.target} (${m.reward}c)</p>
+                </div>
+                <p class="mission-timer">${min}:${sec.toString().padStart(2, '0')}</p>
+            </div>
+        `;
+        body.classList.add('emergency-active');
+    } else {
+        emergencyEl.innerHTML = `<div class="mission-item empty">None</div>`;
+        body.classList.remove('emergency-active');
+    }
+}
+
+// --- Main Loops ---
 async function predictWebcam() {
     canvasElement.width = video.videoWidth;
     canvasElement.height = video.videoHeight;
@@ -91,105 +243,62 @@ async function predictWebcam() {
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         
         const drawingUtils = new DrawingUtils(canvasCtx);
-        if (result.landmarks) {
-            for (const landmarks of result.landmarks) {
-                drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
-                drawingUtils.drawLandmarks(landmarks, { radius: 4 });
-                
-                const motion = calculateMotion(result.landmarks);
-                updateMotionState(motion);
-            }
+        if (result.landmarks && result.landmarks.length > 0) {
+            const landmarks = result.landmarks[0];
+            drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
+            drawingUtils.drawLandmarks(landmarks, { radius: 3 });
+            
+            checkExercises(landmarks);
+            
+            // Motion detection for bonus
+            const motion = calculateMotion(result.landmarks);
+            updateMotionState(motion);
         }
         canvasCtx.restore();
     }
     requestAnimationFrame(predictWebcam);
 }
 
+function calculateMotion(landmarks) {
+    if (!lastLandmarks || !landmarks[0]) {
+        lastLandmarks = landmarks[0];
+        return 0;
+    }
+    let totalDiff = 0;
+    const current = landmarks[0];
+    const previous = lastLandmarks;
+    const joints = [11, 12, 13, 14, 15, 16];
+    joints.forEach(idx => {
+        totalDiff += Math.hypot(current[idx].x - previous[idx].x, current[idx].y - previous[idx].y);
+    });
+    lastLandmarks = current;
+    return totalDiff / joints.length;
+}
+
 function updateMotionState(motion) {
-    const normalizedMotion = Math.min(motion * 500, 100); // Scale for UI
+    const normalizedMotion = Math.min(motion * 500, 100);
     motionBar.style.width = `${normalizedMotion}%`;
-
-    if (motion > MOTION_THRESHOLD) {
-        isBonusActive = true;
-        body.classList.add('bonus-active');
-    } else {
-        isBonusActive = false;
-        body.classList.remove('bonus-active');
-    }
+    isBonusActive = motion > 0.05;
+    if (isBonusActive) body.classList.add('bonus-active');
+    else body.classList.remove('bonus-active');
 }
 
-// Game Functions
-function updateCoins(amount = null) {
-    if (amount !== null) {
-        coins += amount;
-    } else {
-        const rate = isBonusActive ? BASE_RATE * BONUS_MULTIPLIER : BASE_RATE;
-        coins += rate;
-    }
-    coinDisplay.textContent = Math.floor(coins).toLocaleString();
-    const rate = isBonusActive ? BASE_RATE * BONUS_MULTIPLIER : BASE_RATE;
-    earningRateText.textContent = `Rate: ${rate} coins/sec`;
+function gameLoop() {
+    const rate = isBonusActive ? 100 : 1;
+    state.coins += rate / 10; // Run 10 times per second
+    renderUI();
+    if (Math.random() < 0.0005) triggerEmergencyMission(); // Random emergency
 }
 
-function startMission() {
-    const randomMission = MISSIONS[Math.floor(Math.random() * MISSIONS.length)];
-    currentMission = randomMission;
-    missionTitle.textContent = randomMission.title;
-    missionReward.textContent = `Reward: ${randomMission.reward.toLocaleString()} coins`;
-    missionProgress = 0;
-    
-    if (randomMission.type === "emergency") {
-        body.classList.add('emergency');
-        missionTimeLeft = randomMission.time;
-        missionBtn.disabled = true;
-        
-        if (missionInterval) clearInterval(missionInterval);
-        missionInterval = setInterval(() => {
-            missionTimeLeft--;
-            if (isBonusActive) {
-                missionProgress++;
-                missionBtn.textContent = `AI Analyzing: ${Math.floor((missionProgress / randomMission.time) * 100)}%`;
-            } else {
-                missionBtn.textContent = "AI WAITING FOR MOTION...";
-            }
-            missionTimer.textContent = `00:${missionTimeLeft.toString().padStart(2, '0')}`;
-            if (missionTimeLeft <= 0) {
-                clearInterval(missionInterval);
-                if (missionProgress >= randomMission.time * 0.4) completeMission();
-                else failMission();
-            }
-        }, 1000);
-    } else {
-        body.classList.remove('emergency');
-        missionTimer.textContent = "--:--";
-        missionBtn.disabled = false;
-        missionBtn.textContent = "Complete Mission";
-    }
-}
-
-function completeMission() {
-    updateCoins(currentMission.reward);
-    missionTitle.textContent = "MISSION COMPLETE!";
-    missionTimer.textContent = "DONE";
-    body.classList.remove('emergency');
-    setTimeout(startMission, 5000);
-}
-
-function failMission() {
-    missionTitle.textContent = "MISSION FAILED...";
-    missionTimer.textContent = "FAIL";
-    missionBtn.textContent = "LOW ACTIVITY";
-    body.classList.remove('emergency');
-    setTimeout(startMission, 5000);
-}
-
-missionBtn.addEventListener('click', completeMission);
-
+// --- Init ---
 startBtn.addEventListener('click', async () => {
+    if (Notification.permission !== "granted") Notification.requestPermission();
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     video.srcObject = stream;
     video.addEventListener('loadeddata', predictWebcam);
     startBtn.style.display = 'none';
-    setInterval(updateCoins, 1000);
-    startMission();
+    generateDailyMissions();
+    setInterval(gameLoop, 100);
+    setInterval(saveState, 5000);
 });
+renderUI();
